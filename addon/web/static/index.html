@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KNX Manager</title>
+    <style>
+        :root {
+            --bg: #f4f6f8;
+            --card: #ffffff;
+            --ink: #18222d;
+            --accent: #0d7a5f;
+            --danger: #a13434;
+            --border: #d7dee6;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            background: linear-gradient(180deg, #eef3f7 0%, #f8fafc 100%);
+            color: var(--ink);
+        }
+
+        .wrap {
+            max-width: 980px;
+            margin: 28px auto;
+            padding: 0 16px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            margin: 0 0 12px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            padding: 10px;
+        }
+
+        button {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 7px 12px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        button.danger {
+            background: var(--danger);
+            color: #fff;
+            border-color: var(--danger);
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        input {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            min-width: 220px;
+        }
+
+        pre {
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 10px;
+            border-radius: 8px;
+            min-height: 140px;
+            white-space: pre-wrap;
+        }
+
+        .muted {
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <h1>KNX Manager</h1>
+
+        <div class="card">
+            <h3>System</h3>
+            <div id="system" class="muted">loading...</div>
+        </div>
+
+        <div class="card">
+            <h3>Domains</h3>
+            <div class="row" style="margin-bottom: 12px">
+                <input id="newDomain" placeholder="knx5" />
+                <button class="primary" onclick="createDomain()">Add domain</button>
+                <button onclick="refreshDomains()">Refresh</button>
+                <button class="primary" onclick="updateAll()">Update all</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Path</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="domainsBody"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>Job</h3>
+            <div id="jobState" class="muted">no active job</div>
+            <pre id="jobLogs"></pre>
+        </div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let pollTimer = null;
+
+        async function request(url, options = {}) {
+            const response = await fetch(url, {
+                headers: { "Content-Type": "application/json" },
+                ...options,
+            });
+            if (!response.ok) {
+                const payload = await response.json().catch(() => ({ error: response.statusText }));
+                throw new Error(payload.error || "request failed");
+            }
+            if (response.status === 204) {
+                return null;
+            }
+            return response.json();
+        }
+
+        async function refreshSystem() {
+            const sys = await request("/api/system/info");
+            document.getElementById("system").textContent =
+                `HA version: ${sys.haVersion} | Components path: ${sys.componentsPath}`;
+        }
+
+        async function refreshDomains() {
+            const domains = await request("/api/domains");
+            const body = document.getElementById("domainsBody");
+            body.innerHTML = "";
+            domains.forEach((item) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+            <td>${item.name}</td>
+            <td>${item.path}</td>
+            <td>
+              <button onclick="updateDomain('${item.name}')">Update</button>
+              <button class="danger" onclick="deleteDomain('${item.name}')">Delete</button>
+            </td>
+          `;
+                body.appendChild(row);
+            });
+        }
+
+        async function createDomain() {
+            const domain = document.getElementById("newDomain").value.trim();
+            if (!domain) return;
+            const payload = await request("/api/domains", {
+                method: "POST",
+                body: JSON.stringify({ domain }),
+            });
+            watchJob(payload.jobId);
+        }
+
+        async function deleteDomain(domain) {
+            if (!confirm(`Delete ${domain}?`)) return;
+            await request(`/api/domains/${domain}`, { method: "DELETE" });
+            await refreshDomains();
+        }
+
+        async function updateDomain(domain) {
+            const payload = await request(`/api/domains/${domain}/update`, { method: "POST" });
+            watchJob(payload.jobId);
+        }
+
+        async function updateAll() {
+            const payload = await request(`/api/domains/update-all`, { method: "POST" });
+            watchJob(payload.jobId);
+        }
+
+        function watchJob(jobId) {
+            currentJobId = jobId;
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(loadJob, 1500);
+            loadJob();
+        }
+
+        async function loadJob() {
+            if (!currentJobId) return;
+            const job = await request(`/api/jobs/${currentJobId}`);
+            document.getElementById("jobState").textContent =
+                `${job.type} / ${job.target} / ${job.status}` + (job.error ? ` / ${job.error}` : "");
+            document.getElementById("jobLogs").textContent = (job.logs || []).join("\n");
+
+            if (["success", "failed"].includes(job.status)) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                refreshDomains();
+                refreshSystem();
+            }
+        }
+
+        (async function init() {
+            try {
+                await refreshSystem();
+                await refreshDomains();
+            } catch (err) {
+                document.getElementById("jobState").textContent = err.message;
+            }
+        })();
+    </script>
+</body>
+
+</html>

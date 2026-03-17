@@ -1,0 +1,21 @@
+name: KNX Manager
+slug: knx_manager
+version: "0.1.0"
+description: Manage custom KNX clone integrations (knxN)
+url: https://github.com/illia-piskurov/knx-customcomp-updater-addon
+init: false
+startup: services
+boot: auto
+ingress: true
+ingress_port: 8080
+hassio_api: true
+panel_icon: mdi:router-network
+arch:
+  - aarch64
+  - amd64
+  - armv7
+  - i386
+map:
+  - config:rw
+options: {}
+schema: {}
