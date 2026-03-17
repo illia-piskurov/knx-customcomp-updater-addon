@@ -86,8 +86,9 @@
         }
 
         pre {
-            background: #0d1117;
-            color: #c9d1d9;
+            background: #f7fafc;
+            color: var(--ink);
+            border: 1px solid var(--border);
             padding: 10px;
             border-radius: 8px;
             min-height: 140px;
@@ -96,6 +97,12 @@
 
         .muted {
             opacity: 0.7;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #5f6d7a;
+            font-style: italic;
         }
     </style>
 </head>
@@ -156,15 +163,27 @@
         }
 
         async function refreshSystem() {
-            const sys = await request("/api/system/info");
-            document.getElementById("system").textContent =
-                `HA version: ${sys.haVersion} | Components path: ${sys.componentsPath}`;
+            try {
+                const sys = await request("api/system/info");
+                document.getElementById("system").textContent =
+                    `HA version: ${sys.haVersion} | Components path: ${sys.componentsPath}`;
+            } catch (err) {
+                document.getElementById("system").textContent = `Unavailable: ${err.message}`;
+            }
         }
 
         async function refreshDomains() {
-            const domains = await request("/api/domains");
+            const domains = await request("api/domains");
             const body = document.getElementById("domainsBody");
             body.innerHTML = "";
+
+            if (!domains.length) {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td colspan="3" class="empty-state">No domains found yet</td>`;
+                body.appendChild(row);
+                return;
+            }
+
             domains.forEach((item) => {
                 const row = document.createElement("tr");
                 row.innerHTML = `
@@ -182,7 +201,7 @@
         async function createDomain() {
             const domain = document.getElementById("newDomain").value.trim();
             if (!domain) return;
-            const payload = await request("/api/domains", {
+            const payload = await request("api/domains", {
                 method: "POST",
                 body: JSON.stringify({ domain }),
             });
@@ -191,17 +210,17 @@
 
         async function deleteDomain(domain) {
             if (!confirm(`Delete ${domain}?`)) return;
-            await request(`/api/domains/${domain}`, { method: "DELETE" });
+            await request(`api/domains/${domain}`, { method: "DELETE" });
             await refreshDomains();
         }
 
         async function updateDomain(domain) {
-            const payload = await request(`/api/domains/${domain}/update`, { method: "POST" });
+            const payload = await request(`api/domains/${domain}/update`, { method: "POST" });
             watchJob(payload.jobId);
         }
 
         async function updateAll() {
-            const payload = await request(`/api/domains/update-all`, { method: "POST" });
+            const payload = await request("api/domains/update-all", { method: "POST" });
             watchJob(payload.jobId);
         }
 
@@ -214,7 +233,7 @@
 
         async function loadJob() {
             if (!currentJobId) return;
-            const job = await request(`/api/jobs/${currentJobId}`);
+            const job = await request(`api/jobs/${currentJobId}`);
             document.getElementById("jobState").textContent =
                 `${job.type} / ${job.target} / ${job.status}` + (job.error ? ` / ${job.error}` : "");
             document.getElementById("jobLogs").textContent = (job.logs || []).join("\n");
@@ -232,7 +251,7 @@
                 await refreshSystem();
                 await refreshDomains();
             } catch (err) {
-                document.getElementById("jobState").textContent = err.message;
+                document.getElementById("jobState").textContent = `Init error: ${err.message}`;
             }
         })();
     </script>
