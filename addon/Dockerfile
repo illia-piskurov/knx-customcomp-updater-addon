@@ -18,9 +18,12 @@ WORKDIR /app
 
 COPY --from=builder /out/knx-manager /usr/local/bin/knx-manager
 COPY web ./web
+COPY run.sh /run.sh
+
+RUN chmod +x /run.sh
 
 ENV CUSTOM_COMPONENTS_DIR=/config/custom_components
 ENV KNX_MANAGER_LISTEN=:8080
 ENV KNX_MANAGER_STATIC_DIR=/app/web/static
 
-CMD ["/usr/local/bin/knx-manager"]
+CMD ["/run.sh"]
