@@ -1,6 +1,6 @@
 name: KNX Manager
 slug: knx_manager
-version: "0.1.3"
+version: "0.1.4"
 description: Manage custom KNX clone integrations (knxN)
 url: https://github.com/illia-piskurov/knx-customcomp-updater-addon
 init: false
