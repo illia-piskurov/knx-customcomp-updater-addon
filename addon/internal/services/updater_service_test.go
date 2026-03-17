@@ -57,7 +57,7 @@ func TestRewriteManifest(t *testing.T) {
 	if payload["name"] != "KNX12" {
 		t.Fatalf("unexpected name: %v", payload["name"])
 	}
-	if payload["version"] != "2025.3.0-custom" {
+	if payload["version"] != "1.0.0" {
 		t.Fatalf("unexpected version: %v", payload["version"])
 	}
 }

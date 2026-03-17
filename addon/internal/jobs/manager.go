@@ -64,6 +64,19 @@ func (m *Manager) GetJob(id string) (*Job, bool) {
 	return cloneJob(job), true
 }
 
+func (m *Manager) HasRunningJob() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, job := range m.jobs {
+		if job.Status == StatusQueued || job.Status == StatusRunning {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *Manager) Run(id string, run func(logf func(string)) error) {
 	go func() {
 		m.setStatus(id, StatusRunning, "")

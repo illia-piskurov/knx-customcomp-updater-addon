@@ -60,6 +60,12 @@
             cursor: pointer;
         }
 
+        button:disabled,
+        input:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         button.primary {
             background: var(--accent);
             color: #fff;
@@ -99,6 +105,12 @@
             opacity: 0.7;
         }
 
+        .error-text {
+            color: #a13434;
+            font-size: 14px;
+            min-height: 18px;
+        }
+
         .empty-state {
             text-align: center;
             color: #5f6d7a;
@@ -120,9 +132,9 @@
             <h3>Domains</h3>
             <div class="row" style="margin-bottom: 12px">
                 <input id="newDomain" placeholder="knx5" />
-                <button class="primary" onclick="createDomain()">Add domain</button>
+                <button id="addDomainBtn" class="primary" onclick="createDomain()">Add domain</button>
                 <button onclick="refreshDomains()">Refresh</button>
-                <button class="primary" onclick="updateAll()">Update all</button>
+                <button id="updateAllBtn" class="primary" onclick="updateAll()">Update all</button>
             </div>
             <table>
                 <thead>
@@ -146,6 +158,11 @@
     <script>
         let currentJobId = null;
         let pollTimer = null;
+        let domainNames = [];
+        let isVersionAvailable = false;
+        let isJobRunning = false;
+
+        const DOMAIN_PATTERN = /^knx\d+$/;
 
         async function request(url, options = {}) {
             const response = await fetch(url, {
@@ -165,15 +182,19 @@
         async function refreshSystem() {
             try {
                 const sys = await request("api/system/info");
+                isVersionAvailable = !String(sys.haVersion).toLowerCase().startsWith("unavailable:");
                 document.getElementById("system").textContent =
                     `HA version: ${sys.haVersion} | Components path: ${sys.componentsPath}`;
             } catch (err) {
+                isVersionAvailable = false;
                 document.getElementById("system").textContent = `Unavailable: ${err.message}`;
             }
+            updateActionButtons();
         }
 
         async function refreshDomains() {
             const domains = await request("api/domains");
+            domainNames = domains.map((d) => d.name);
             const body = document.getElementById("domainsBody");
             body.innerHTML = "";
 
@@ -190,42 +211,78 @@
             <td>${item.name}</td>
             <td>${item.path}</td>
             <td>
-              <button onclick="updateDomain('${item.name}')">Update</button>
-              <button class="danger" onclick="deleteDomain('${item.name}')">Delete</button>
+              <button class="update-btn" onclick="updateDomain('${item.name}')">Update</button>
+              <button class="danger delete-btn" onclick="deleteDomain('${item.name}')">Delete</button>
             </td>
           `;
                 body.appendChild(row);
             });
+
+            updateActionButtons();
         }
 
         async function createDomain() {
             const domain = document.getElementById("newDomain").value.trim();
-            if (!domain) return;
-            const payload = await request("api/domains", {
-                method: "POST",
-                body: JSON.stringify({ domain }),
-            });
-            watchJob(payload.jobId);
+            clearUiError();
+            if (!domain) {
+                showUiError("Enter domain name (example: knx5).");
+                return;
+            }
+            if (!DOMAIN_PATTERN.test(domain)) {
+                showUiError("Invalid domain name. Use knxN format (example: knx5).");
+                return;
+            }
+            if (domainNames.includes(domain)) {
+                showUiError(`Domain ${domain} already exists.`);
+                return;
+            }
+
+            try {
+                const payload = await request("api/domains", {
+                    method: "POST",
+                    body: JSON.stringify({ domain }),
+                });
+                watchJob(payload.jobId);
+            } catch (err) {
+                showUiError(err.message);
+            }
         }
 
         async function deleteDomain(domain) {
+            clearUiError();
             if (!confirm(`Delete ${domain}?`)) return;
-            await request(`api/domains/${domain}`, { method: "DELETE" });
-            await refreshDomains();
+            try {
+                await request(`api/domains/${domain}`, { method: "DELETE" });
+                await refreshDomains();
+            } catch (err) {
+                showUiError(err.message);
+            }
         }
 
         async function updateDomain(domain) {
-            const payload = await request(`api/domains/${domain}/update`, { method: "POST" });
-            watchJob(payload.jobId);
+            clearUiError();
+            try {
+                const payload = await request(`api/domains/${domain}/update`, { method: "POST" });
+                watchJob(payload.jobId);
+            } catch (err) {
+                showUiError(err.message);
+            }
         }
 
         async function updateAll() {
-            const payload = await request("api/domains/update-all", { method: "POST" });
-            watchJob(payload.jobId);
+            clearUiError();
+            try {
+                const payload = await request("api/domains/update-all", { method: "POST" });
+                watchJob(payload.jobId);
+            } catch (err) {
+                showUiError(err.message);
+            }
         }
 
         function watchJob(jobId) {
             currentJobId = jobId;
+            isJobRunning = true;
+            updateActionButtons();
             if (pollTimer) clearInterval(pollTimer);
             pollTimer = setInterval(loadJob, 1500);
             loadJob();
@@ -241,8 +298,36 @@
             if (["success", "failed"].includes(job.status)) {
                 clearInterval(pollTimer);
                 pollTimer = null;
+                isJobRunning = false;
+                updateActionButtons();
                 refreshDomains();
                 refreshSystem();
+            }
+        }
+
+        function updateActionButtons() {
+            const createBtn = document.getElementById("addDomainBtn");
+            const updateAllBtn = document.getElementById("updateAllBtn");
+            const input = document.getElementById("newDomain");
+
+            const disableMutating = !isVersionAvailable || isJobRunning;
+            if (createBtn) createBtn.disabled = disableMutating;
+            if (updateAllBtn) updateAllBtn.disabled = disableMutating;
+            if (input) input.disabled = disableMutating;
+
+            document.querySelectorAll(".update-btn,.delete-btn").forEach((btn) => {
+                btn.disabled = disableMutating;
+            });
+        }
+
+        function showUiError(message) {
+            document.getElementById("jobState").textContent = `Error: ${message}`;
+        }
+
+        function clearUiError() {
+            const jobState = document.getElementById("jobState");
+            if (jobState.textContent.startsWith("Error:")) {
+                jobState.textContent = "no active job";
             }
         }
 

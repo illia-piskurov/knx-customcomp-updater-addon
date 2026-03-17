@@ -231,7 +231,7 @@ func rewriteDomainConst(filePath string, domain string) error {
 	return os.WriteFile(filePath, []byte(replaced), 0o644)
 }
 
-func rewriteManifest(filePath string, domain string, sourceVersion string) error {
+func rewriteManifest(filePath string, domain string, _ string) error {
 	contentBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
@@ -244,7 +244,7 @@ func rewriteManifest(filePath string, domain string, sourceVersion string) error
 
 	manifest["domain"] = domain
 	manifest["name"] = strings.ToUpper(domain)
-	manifest["version"] = fmt.Sprintf("%s-custom", sourceVersion)
+	manifest["version"] = "1.0.0"
 
 	out, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

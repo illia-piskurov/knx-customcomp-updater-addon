@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"knx-updater/internal/config"
 	"knx-updater/internal/jobs"
 	"knx-updater/internal/models"
 	"knx-updater/internal/services"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
@@ -62,6 +63,10 @@ func (h *Handler) listDomains(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureNoRunningJob(w) {
+		return
+	}
+
 	var req createDomainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -83,6 +88,10 @@ func (h *Handler) createDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteDomain(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureNoRunningJob(w) {
+		return
+	}
+
 	domain := chi.URLParam(r, "domain")
 	if err := h.domains.DeleteDomain(domain); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -92,6 +101,10 @@ func (h *Handler) deleteDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateDomain(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureNoRunningJob(w) {
+		return
+	}
+
 	domain := chi.URLParam(r, "domain")
 	if err := h.domains.ValidateDomain(domain); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -109,6 +122,10 @@ func (h *Handler) updateDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateAll(w http.ResponseWriter, r *http.Request) {
+	if !h.ensureNoRunningJob(w) {
+		return
+	}
+
 	job := h.jobs.NewJob("update-all", "all")
 	h.jobs.Run(job.ID, func(logf func(string)) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
@@ -158,4 +175,13 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 
 func writeError(w http.ResponseWriter, statusCode int, message string) {
 	writeJSON(w, statusCode, map[string]string{"error": message})
+}
+
+func (h *Handler) ensureNoRunningJob(w http.ResponseWriter) bool {
+	if h.jobs.HasRunningJob() {
+		writeError(w, http.StatusConflict, "another job is already running")
+		return false
+	}
+
+	return true
 }
