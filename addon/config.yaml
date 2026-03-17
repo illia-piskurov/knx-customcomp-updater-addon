@@ -8,7 +8,10 @@ startup: services
 boot: auto
 ingress: true
 ingress_port: 8080
+panel_admin: true
 hassio_api: true
+hassio_role: manager
+homeassistant_api: true
 panel_icon: mdi:router-network
 arch:
   - aarch64
